@@ -1,0 +1,80 @@
+name: PR checks
+
+# Everything that needs the pull request itself rather than the commit: its title, its
+# description, its author, its labels. A push-triggered build pipeline has none of that — a push
+# event carries a SHA and a branch name and nothing else — so this lives in its own workflow.
+#
+# One job, not several. Each step takes seconds, and steps inside one job report as a single
+# check instead of a wall of near-identical rows.
+
+on:
+  pull_request:
+    types:
+      [opened, reopened, ready_for_review, edited, synchronize, labeled, unlabeled, closed]
+
+permissions:
+  contents: read
+
+jobs:
+  conventions:
+    # Fork PRs get no secrets, so the Jira step could not authenticate anyway.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Unit tests
+        if: github.event.action != 'closed'
+        run: npm test
+
+      # The branch is the only place the work item key appears, so sync.js has nothing to go on
+      # if the name is wrong. The pre-push hook catches this locally; this catches branches
+      # created from the GitHub web UI or any machine without the hook.
+      #
+      # Reads the pattern from package.json, so the hook and this step can never disagree.
+      - name: Branch name
+        if: >-
+          github.event.action != 'closed' &&
+          !contains(github.event.pull_request.labels.*.name, 'no-ticket')
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: npx --yes validate-branch-name -t "$BRANCH"
+
+      # With squash merges titled from the PR, whatever is here becomes the commit subject on
+      # main verbatim.
+      - name: PR title
+        if: github.event.action != 'closed'
+        env:
+          # Passed as an environment variable rather than interpolated into the script below.
+          # A title is whatever the author typed, and `${{ }}` inside run: would hand the shell
+          # any backticks or $( ) it contains.
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|chore|ci|docs|test|refactor|perf|style|build|revert)(\([a-z0-9-]+\))?!?: .+'
+          if ! printf '%s' "$TITLE" | grep -qE "$pattern"; then
+            echo "::error::PR title must be a conventional commit — type(scope)?: subject"
+            echo "Got:      $TITLE"
+            echo "Expected: feat: add notifications   |   fix(budget): scope to fiscal year"
+            exit 1
+          fi
+          echo "ok: $TITLE"
+
+      # Assign + sprint on open; QA Ready on merge, but only for work items the PR says it
+      # Closes. Runs even when a step above failed — a mistyped title should not also cost you
+      # the assignment — but never on a cancelled run.
+      - name: Jira
+        if: >-
+          !cancelled() &&
+          contains(fromJSON('["opened","reopened","ready_for_review","closed"]'), github.event.action)
+        run: node scripts/jira/sync.js
+        env:
+          JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          JIRA_STARTED_STATUS: ${{ vars.JIRA_STARTED_STATUS }}
+          JIRA_MERGED_STATUS: ${{ vars.JIRA_MERGED_STATUS }}
+          JIRA_DELIVERED_STATUSES: ${{ vars.JIRA_DELIVERED_STATUSES }}

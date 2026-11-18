@@ -1,0 +1,3 @@
+# Jira starts tracking a branch the moment it reaches GitHub, so this is the last point where a
+# bad name is still free to fix. The pattern lives in package.json under "validate-branch-name".
+npm run pre-push

@@ -1,0 +1,4 @@
+{
+  "_note": "GitHub login → Jira accountId, used by scripts/jira/sync.js to assign work items. Keyed by login rather than email on purpose: commits carry whichever address a person's git config held at the time, while the login is one stable value GitHub puts in every webhook. Find an accountId in Jira under Profile → the id in the URL, or GET /rest/api/3/user/search?query=<email>. A login missing here does not fail the build — the run reports it in the job summary and leaves the item unassigned.",
+  "octocat": "000000:00000000-0000-0000-0000-000000000000"
+}

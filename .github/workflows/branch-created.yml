@@ -1,0 +1,38 @@
+name: Branch created
+
+# Work starts when the branch is pushed. The pull request often follows days later, and until it
+# does the work item sits in To Do, unassigned — looking exactly like nobody has picked it up.
+#
+# Separate from pr-checks.yml because the trigger has nothing to do with pull requests, and the
+# branch name is the only thing a create event carries. Both call the same script; it tells the
+# two apart by the shape of the event payload.
+#
+# GitHub reads this file from the branch that was just created, which is a copy of main at the
+# point it was cut — so an edit here applies to branches created after it merges, not before.
+
+on: create
+
+permissions:
+  contents: read
+
+jobs:
+  jira:
+    # create also fires for tags. A branch with no key in its name is a no-op in the script,
+    # so chore-… and dependabot/… branches fall through harmlessly.
+    if: github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Sync work item
+        run: node scripts/jira/sync.js
+        env:
+          JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          JIRA_STARTED_STATUS: ${{ vars.JIRA_STARTED_STATUS }}
+          JIRA_MERGED_STATUS: ${{ vars.JIRA_MERGED_STATUS }}
+          JIRA_DELIVERED_STATUSES: ${{ vars.JIRA_DELIVERED_STATUSES }}
